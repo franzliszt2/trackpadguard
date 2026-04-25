@@ -68,7 +68,7 @@ _write_plist() {
         <string>${HOME}/Library/Preferences/com.apple.driver.AppleBluetoothMultitouch.trackpad.plist</string>
     </array>
     <key>StartInterval</key>
-    <integer>3</integer>
+    <integer>60</integer>
     <key>RunAtLoad</key>
     <true/>
 </dict>
@@ -321,7 +321,7 @@ case "${1:-}" in
     toggle)    cmd_toggle ;;
     status)    cmd_status ;;
     monitor)   cmd_monitor "$@" ;;
-    intercept) cmd_intercept ;;
+    intercept) cmd_intercept "$@" ;;
     *)
         echo "Usage: trackpad-guard {install|uninstall|enable|disable|toggle|status|monitor|intercept}"
         exit 1
