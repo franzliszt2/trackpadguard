@@ -1,15 +1,19 @@
 #!/bin/bash
 # trackpad-guard
 # Persists macOS trackpad gestures against apps that override them.
-# Installs a LaunchAgent that reasserts gesture preferences every 5 seconds.
+# Installs a LaunchAgent that reasserts gesture preferences every 60 seconds.
 #
 # Usage:
-#   trackpad-guard install    — set up and start the guard
-#   trackpad-guard uninstall  — remove everything
-#   trackpad-guard enable     — start the guard (after install)
-#   trackpad-guard disable    — stop the guard without uninstalling
-#   trackpad-guard toggle     — flip current state
-#   trackpad-guard status     — show whether the guard is running
+#   trackpad-guard install          — set up and start the guard
+#   trackpad-guard uninstall        — remove everything
+#   trackpad-guard enable           — start the guard (after install)
+#   trackpad-guard disable          — stop the guard without uninstalling
+#   trackpad-guard toggle           — flip current state
+#   trackpad-guard status           — show whether the guard is running
+#   trackpad-guard monitor start    — start network/process monitor
+#   trackpad-guard monitor stop     — stop monitor
+#   trackpad-guard monitor log      — print captured log
+#   trackpad-guard monitor clear    — clear log file
 
 set -euo pipefail
 
@@ -24,6 +28,11 @@ LABEL="com.user.trackpad-restore"
 SCRIPT_PATH="$HOME/Library/Scripts/restore-trackpad.sh"
 PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 
+MONITOR_LABEL="com.user.tpg-monitor"
+MONITOR_SCRIPT_PATH="$HOME/Library/Scripts/tpg-monitor.sh"
+MONITOR_PLIST_PATH="$HOME/Library/LaunchAgents/${MONITOR_LABEL}.plist"
+MONITOR_LOG="$HOME/tpg-monitor.log"
+
 # ── internal helpers ─────────────────────────────────────────────────────────
 _write_restore_script() {
     mkdir -p "$(dirname "$SCRIPT_PATH")"
@@ -35,7 +44,6 @@ defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGest
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
 defaults write com.apple.dock showMissionControlGestureEnabled -bool true
-killall Dock 2>/dev/null || true
 RESTORE
     chmod +x "$SCRIPT_PATH"
 }
@@ -74,6 +82,48 @@ _is_loaded() {
 
 _is_installed() {
     [[ -f "$PLIST_PATH" && -f "$SCRIPT_PATH" ]]
+}
+
+_monitor_is_loaded() {
+    launchctl list 2>/dev/null | grep -q "$MONITOR_LABEL"
+}
+
+_write_monitor_script() {
+    mkdir -p "$(dirname "$MONITOR_SCRIPT_PATH")"
+    cat > "$MONITOR_SCRIPT_PATH" << MONITOR
+#!/bin/bash
+LOGFILE="$MONITOR_LOG"
+echo "=== SESSION START: \$(date) ===" >> "\$LOGFILE"
+while true; do
+    echo "--- \$(date) ---" >> "\$LOGFILE"
+    lsof -i -n -P 2>/dev/null | grep -v "LISTEN\|localhost\|127.0.0.1" >> "\$LOGFILE"
+    sleep 5
+done
+MONITOR
+    chmod +x "$MONITOR_SCRIPT_PATH"
+}
+
+_write_monitor_plist() {
+    mkdir -p "$(dirname "$MONITOR_PLIST_PATH")"
+    cat > "$MONITOR_PLIST_PATH" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${MONITOR_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${MONITOR_SCRIPT_PATH}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+PLIST
 }
 
 # ── commands ─────────────────────────────────────────────────────────────────
@@ -136,6 +186,49 @@ cmd_status() {
     fi
 }
 
+cmd_monitor() {
+    case "${2:-}" in
+        start)
+            if _monitor_is_loaded; then
+                echo "monitor: already running."
+                exit 0
+            fi
+            _write_monitor_script
+            _write_monitor_plist
+            launchctl load "$MONITOR_PLIST_PATH"
+            echo "monitor: started. logging to $MONITOR_LOG"
+            ;;
+        stop)
+            if ! _monitor_is_loaded; then
+                echo "monitor: not running."
+                exit 0
+            fi
+            launchctl unload "$MONITOR_PLIST_PATH"
+            rm -f "$MONITOR_SCRIPT_PATH" "$MONITOR_PLIST_PATH"
+            echo "monitor: stopped."
+            ;;
+        log)
+            if [[ -f "$MONITOR_LOG" ]]; then
+                cat "$MONITOR_LOG"
+            else
+                echo "monitor: no log found at $MONITOR_LOG"
+            fi
+            ;;
+        clear)
+            rm -f "$MONITOR_LOG"
+            echo "monitor: log cleared."
+            ;;
+        *)
+            if _monitor_is_loaded; then
+                echo "monitor: RUNNING — log at $MONITOR_LOG"
+            else
+                echo "monitor: STOPPED"
+            fi
+            echo "Usage: trackpad-guard monitor {start|stop|log|clear}"
+            ;;
+    esac
+}
+
 # ── dispatch ─────────────────────────────────────────────────────────────────
 case "${1:-}" in
     install)   cmd_install ;;
@@ -144,8 +237,9 @@ case "${1:-}" in
     disable)   cmd_disable ;;
     toggle)    cmd_toggle ;;
     status)    cmd_status ;;
+    monitor)   cmd_monitor "$@" ;;
     *)
-        echo "Usage: trackpad-guard {install|uninstall|enable|disable|toggle|status}"
+        echo "Usage: trackpad-guard {install|uninstall|enable|disable|toggle|status|monitor}"
         exit 1
         ;;
 esac
