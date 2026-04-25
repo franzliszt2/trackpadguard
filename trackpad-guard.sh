@@ -59,6 +59,8 @@ _write_plist() {
         <string>${HOME}/Library/Preferences/com.apple.AppleMultitouchTrackpad.plist</string>
         <string>${HOME}/Library/Preferences/com.apple.driver.AppleBluetoothMultitouch.trackpad.plist</string>
     </array>
+    <key>StartInterval</key>
+    <integer>60</integer>
     <key>RunAtLoad</key>
     <true/>
 </dict>
