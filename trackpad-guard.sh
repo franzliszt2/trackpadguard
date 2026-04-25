@@ -229,6 +229,16 @@ cmd_monitor() {
     esac
 }
 
+cmd_intercept() {
+    local script="$HOME/Library/Scripts/tpg-intercept.sh"
+    if [[ ! -f "$script" ]]; then
+        echo "intercept: script not found at $script" >&2
+        exit 1
+    fi
+    chmod +x "$script"
+    bash "$script"
+}
+
 # ── dispatch ─────────────────────────────────────────────────────────────────
 case "${1:-}" in
     install)   cmd_install ;;
@@ -238,8 +248,9 @@ case "${1:-}" in
     toggle)    cmd_toggle ;;
     status)    cmd_status ;;
     monitor)   cmd_monitor "$@" ;;
+    intercept) cmd_intercept ;;
     *)
-        echo "Usage: trackpad-guard {install|uninstall|enable|disable|toggle|status|monitor}"
+        echo "Usage: trackpad-guard {install|uninstall|enable|disable|toggle|status|monitor|intercept}"
         exit 1
         ;;
 esac
