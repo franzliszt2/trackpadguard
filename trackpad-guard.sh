@@ -68,7 +68,7 @@ _write_plist() {
         <string>${HOME}/Library/Preferences/com.apple.driver.AppleBluetoothMultitouch.trackpad.plist</string>
     </array>
     <key>StartInterval</key>
-    <integer>10</integer>
+    <integer>3</integer>
     <key>RunAtLoad</key>
     <true/>
 </dict>
@@ -229,14 +229,87 @@ cmd_monitor() {
     esac
 }
 
+INTERCEPT_LABEL="com.user.tpg-intercept"
+INTERCEPT_SCRIPT_PATH="$HOME/Library/Scripts/tpg-intercept.sh"
+INTERCEPT_PLIST_PATH="$HOME/Library/LaunchAgents/${INTERCEPT_LABEL}.plist"
+INTERCEPT_CAPTURE="$HOME/tpg-intercept.mitm"
+INTERCEPT_IFACE="Wi-Fi"
+INTERCEPT_PORT="8080"
+INTERCEPT_TARGET="104.40.92.107"
+
+_intercept_is_loaded() {
+    launchctl list 2>/dev/null | grep -q "$INTERCEPT_LABEL"
+}
+
+_write_intercept_plist() {
+    mkdir -p "$(dirname "$INTERCEPT_PLIST_PATH")"
+    cat > "$INTERCEPT_PLIST_PATH" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${INTERCEPT_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${INTERCEPT_SCRIPT_PATH}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+}
+
 cmd_intercept() {
-    local script="$HOME/Library/Scripts/tpg-intercept.sh"
-    if [[ ! -f "$script" ]]; then
-        echo "intercept: script not found at $script" >&2
-        exit 1
-    fi
-    chmod +x "$script"
-    bash "$script"
+    case "${2:-}" in
+        start)
+            if _intercept_is_loaded; then
+                echo "intercept: already running."
+                exit 0
+            fi
+            chmod +x "$INTERCEPT_SCRIPT_PATH"
+            _write_intercept_plist
+            launchctl load "$INTERCEPT_PLIST_PATH"
+            echo "intercept: running. Proxy set on $INTERCEPT_IFACE — launch prodapp now."
+            echo "intercept: capture writing to $INTERCEPT_CAPTURE"
+            ;;
+        stop)
+            if ! _intercept_is_loaded; then
+                echo "intercept: not running."
+            else
+                launchctl unload "$INTERCEPT_PLIST_PATH" 2>/dev/null || true
+                rm -f "$INTERCEPT_PLIST_PATH"
+            fi
+            networksetup -setwebproxystate "$INTERCEPT_IFACE" off 2>/dev/null
+            networksetup -setsecurewebproxystate "$INTERCEPT_IFACE" off 2>/dev/null
+            echo "intercept: stopped. Proxy removed."
+            ;;
+        log)
+            if [[ ! -f "$INTERCEPT_CAPTURE" ]]; then
+                echo "intercept: no capture file found at $INTERCEPT_CAPTURE"
+                exit 1
+            fi
+            mitmproxy \
+                --view-filter "~d $INTERCEPT_TARGET" \
+                -r "$INTERCEPT_CAPTURE"
+            ;;
+        clear)
+            rm -f "$INTERCEPT_CAPTURE"
+            echo "intercept: capture cleared."
+            ;;
+        *)
+            if _intercept_is_loaded; then
+                echo "intercept: RUNNING — capture at $INTERCEPT_CAPTURE"
+            else
+                echo "intercept: STOPPED"
+            fi
+            echo "Usage: trackpad-guard intercept {start|stop|log|clear}"
+            ;;
+    esac
 }
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
