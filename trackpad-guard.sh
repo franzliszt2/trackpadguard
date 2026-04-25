@@ -217,13 +217,20 @@ cmd_monitor() {
             rm -f "$MONITOR_LOG"
             echo "monitor: log cleared."
             ;;
+        toggle)
+            if _monitor_is_loaded; then
+                cmd_monitor stop
+            else
+                cmd_monitor start
+            fi
+            ;;
         *)
             if _monitor_is_loaded; then
                 echo "monitor: RUNNING — log at $MONITOR_LOG"
             else
                 echo "monitor: STOPPED"
             fi
-            echo "Usage: trackpad-guard monitor {start|stop|log|clear}"
+            echo "Usage: trackpad-guard monitor {start|stop|log|clear|toggle}"
             ;;
     esac
 }
