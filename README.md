@@ -2,20 +2,18 @@
 
 ## Manifesto
 
-Software that claims authority over your computer is not your boss. A productivity app that disables your gestures, kills your terminal, and walls you into a single screen is making a bet: that if it bricks enough of your environment, compliance follows. This project is the counter-bet — that a user who understands their own system can preserve function without dismantling intent. We don't break the lock. We build a room the lock doesn't know about.
+Software that claims authority over your computer is not your boss. A user who understands their own system can preserve function without dismantling intent. 
 
 ---
 
 ## Context
+Workaround to programs that do the following:
+- Restrict the user to a single application window, preventing switching to other apps or desktops
+- Disable trackpad gestures (three-finger app switching, four-finger Mission Control)
+- Open Terminal and System Settings on launch, then immediately terminated both — cutting off in-session interference
+- Maintain these restrictions for the duration of the session
 
-A productivity-boosting application under development exhibited the following behavior on macOS:
-
-- Restricted the user to a single application window, preventing switching to other apps or desktops
-- Disabled trackpad gestures (three-finger app switching, four-finger Mission Control)
-- Opened Terminal and System Settings on launch, then immediately terminated both — cutting off in-session interference
-- Maintained these restrictions for the duration of the session
-
-The goal was not to disable the software or subvert its purpose. The goal was to preserve ambient system function — specifically trackpad gestures — and establish a clean parallel workspace outside the software's jurisdiction, without modifying the application itself.
+The goal is not to disable the software or subvert its purpose. The goal is to preserve ambient system function — specifically trackpad gestures — and establish a clean parallel workspace outside the software's jurisdiction, without modifying the application itself.
 
 ---
 
@@ -29,7 +27,7 @@ A LaunchAgent runs continuously in the background, managed by `launchd` — macO
 
 ### Layer 2 — Escape Hatch (parallel session)
 
-A second macOS user account (`Franz`) provides a completely isolated desktop environment. macOS Fast User Switching allows switching between sessions via a menu bar icon, without terminating the productivity app in the original session. A hot corner (bottom-right) triggers the lock screen, from which the user can switch to Franz. The productivity app, running under `austinkim`, has no reach into `Franz`'s session.
+A second macOS user account (`Franz`) provides a completely isolated desktop environment. macOS Fast User Switching allows switching between sessions via a menu bar icon, without terminating the productivity app in the original session. A hot corner (bottom-right) triggers the lock screen, from which the user can switch to Franz. The productivity app, running under `User`, has no reach into `Franz`'s session.
 
 ---
 
@@ -103,7 +101,7 @@ Moving the mouse to the bottom-right corner of the screen triggers the macOS loc
 **Account:** username `Franz`, standard user (UID 502)
 **Enabled via:** `defaults write com.apple.controlcenter "NSStatusItem Visible FastUserSwitching" -bool true`
 
-A parallel macOS user session. The productivity app runs under `austinkim` (UID 501) and cannot reach into `Franz`'s session. Switching does not terminate the productivity app — it remains suspended in `austinkim`'s session, exactly as left. Franz's menu bar also has Fast User Switching enabled for returning.
+A parallel macOS user session. The productivity app runs under `User` (UID 501) and cannot reach into `Franz`'s session. Switching does not terminate the productivity app — it remains suspended in `User`'s session, exactly as left. Franz's menu bar also has Fast User Switching enabled for returning.
 
 **Limitations:**
 - Clipboard is not shared between sessions
@@ -136,6 +134,6 @@ The guard does not interfere with the productivity app's core function. It does 
 
 ## MO
 
-Don't fight the lockdown inside its own session. Work around it by stepping into a parallel one. Let the app think it's in control — within `austinkim`'s session, it is. The persistence layer fights the specific collateral damage (gesture suppression) on a 5-second heartbeat. Franz is the clean room.
+Don't fight the lockdown inside its own session. Work around it by stepping into a parallel one. Let the app think it's in control — within `User`'s session, it is. The persistence layer fights the specific collateral damage (gesture suppression) on a 5-second heartbeat. Franz is the clean room.
 
 The principle: match the scope of resistance to the scope of the intrusion. The app restricts gestures and terminals. We restore gestures and preserve terminals. We don't touch the walls it actually built.
