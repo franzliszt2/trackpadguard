@@ -38,7 +38,6 @@ _write_restore_script() {
     mkdir -p "$(dirname "$SCRIPT_PATH")"
     cat > "$SCRIPT_PATH" << 'RESTORE'
 #!/bin/bash
-sleep 2
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 2
 defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
