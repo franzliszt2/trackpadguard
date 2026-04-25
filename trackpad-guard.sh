@@ -34,6 +34,8 @@ defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGe
 defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
+defaults write com.apple.dock showMissionControlGestureEnabled -bool true
+killall Dock 2>/dev/null || true
 RESTORE
     chmod +x "$SCRIPT_PATH"
 }
