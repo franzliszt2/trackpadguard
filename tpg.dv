@@ -1,0 +1,230 @@
+#!/bin/bash
+# tpg.dv — trackpad-guard (distributable version)
+# Persists macOS trackpad/mouse gesture preferences against apps that override them.
+# Installs a per-user LaunchAgent that reasserts gesture preferences periodically
+# and on preference-file changes.
+#
+# Usage:
+#   tpg.dv install      — set up and start the guard
+#   tpg.dv uninstall    — stop and remove everything trackpad-guard owns
+#   tpg.dv enable       — start the guard (after install)
+#   tpg.dv disable      — stop the guard without uninstalling
+#   tpg.dv toggle       — flip current state
+#   tpg.dv status       — show install + run state and paths
+#   tpg.dv help         — show this message
+
+set -euo pipefail
+
+# ── sanity checks ────────────────────────────────────────────────────────────
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: tpg.dv is macOS only." >&2
+    exit 1
+fi
+
+_require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "Error: required command not found: $1" >&2
+        exit 1
+    fi
+}
+
+_require_cmd defaults
+_require_cmd launchctl
+_require_cmd mkdir
+_require_cmd chmod
+_require_cmd rm
+
+# ── paths (all derived from current user's HOME) ─────────────────────────────
+LABEL="com.user.trackpad-restore"
+SCRIPTS_DIR="$HOME/Library/Scripts"
+AGENTS_DIR="$HOME/Library/LaunchAgents"
+SCRIPT_PATH="$SCRIPTS_DIR/restore-trackpad.sh"
+PLIST_PATH="$AGENTS_DIR/${LABEL}.plist"
+
+# ── restore script writer ────────────────────────────────────────────────────
+_write_restore_script() {
+    mkdir -p "$SCRIPTS_DIR"
+    cat > "$SCRIPT_PATH" << 'RESTORE'
+#!/bin/bash
+# Reassert trackpad/mouse gesture prefs. Owned by tpg.dv — do not edit by hand.
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 2
+defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
+defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
+defaults write com.apple.dock showMissionControlGestureEnabled -bool true
+/usr/bin/killall cfprefsd 2>/dev/null || true
+RESTORE
+    chmod +x "$SCRIPT_PATH"
+}
+
+# ── plist writer ─────────────────────────────────────────────────────────────
+_write_plist() {
+    mkdir -p "$AGENTS_DIR"
+    cat > "$PLIST_PATH" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>${SCRIPT_PATH}</string>
+    </array>
+    <key>WatchPaths</key>
+    <array>
+        <string>${HOME}/Library/Preferences/com.apple.AppleMultitouchTrackpad.plist</string>
+        <string>${HOME}/Library/Preferences/com.apple.driver.AppleBluetoothMultitouch.trackpad.plist</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3</integer>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+    if command -v plutil >/dev/null 2>&1; then
+        if ! plutil -lint "$PLIST_PATH" >/dev/null; then
+            echo "Error: generated plist failed validation: $PLIST_PATH" >&2
+            exit 1
+        fi
+    fi
+}
+
+# ── launchctl helper layer ──────────────────────────────────────────────────
+# Prefer modern `bootstrap gui/$UID` / `bootout`; fall back to `load`/`unload`
+# for older macOS where the gui domain APIs are unavailable.
+_agent_is_loaded() {
+    if launchctl print "gui/$UID/$LABEL" >/dev/null 2>&1; then
+        return 0
+    fi
+    launchctl list 2>/dev/null | grep -q "$LABEL"
+}
+
+_load_agent() {
+    if launchctl bootstrap "gui/$UID" "$PLIST_PATH" 2>/dev/null; then
+        return 0
+    fi
+    launchctl load "$PLIST_PATH"
+}
+
+_unload_agent() {
+    if launchctl bootout "gui/$UID/$LABEL" 2>/dev/null; then
+        return 0
+    fi
+    launchctl unload "$PLIST_PATH" 2>/dev/null || true
+}
+
+_is_installed() {
+    [[ -f "$PLIST_PATH" && -f "$SCRIPT_PATH" ]]
+}
+
+# ── commands ─────────────────────────────────────────────────────────────────
+cmd_install() {
+    if _is_installed && _agent_is_loaded; then
+        echo "tpg.dv: already installed and running."
+        return 0
+    fi
+    if _agent_is_loaded; then
+        _unload_agent
+    fi
+    _write_restore_script
+    _write_plist
+    /bin/bash "$SCRIPT_PATH" >/dev/null 2>&1 || true
+    _load_agent
+    echo "tpg.dv: installed and running."
+    echo "  plist:   $PLIST_PATH"
+    echo "  restore: $SCRIPT_PATH"
+}
+
+cmd_uninstall() {
+    if _agent_is_loaded; then
+        _unload_agent
+    fi
+    rm -f "$SCRIPT_PATH" "$PLIST_PATH"
+    echo "tpg.dv: uninstalled."
+}
+
+cmd_enable() {
+    if ! _is_installed; then
+        echo "tpg.dv: not installed. Run 'install' first." >&2
+        exit 1
+    fi
+    if _agent_is_loaded; then
+        echo "tpg.dv: already running."
+        return 0
+    fi
+    _load_agent
+    echo "tpg.dv: enabled."
+}
+
+cmd_disable() {
+    if ! _agent_is_loaded; then
+        echo "tpg.dv: already stopped."
+        return 0
+    fi
+    _unload_agent
+    echo "tpg.dv: disabled."
+}
+
+cmd_toggle() {
+    if _agent_is_loaded; then
+        cmd_disable
+    else
+        cmd_enable
+    fi
+}
+
+cmd_status() {
+    local installed running
+    if _is_installed; then installed="yes"; else installed="no"; fi
+    if _agent_is_loaded; then running="yes"; else running="no"; fi
+    echo "tpg.dv status:"
+    echo "  installed: $installed"
+    echo "  running:   $running"
+    echo "  plist:     $PLIST_PATH"
+    echo "  restore:   $SCRIPT_PATH"
+}
+
+cmd_help() {
+    cat << 'HELP'
+tpg.dv — trackpad-guard (distributable)
+Persists macOS trackpad gesture preferences against apps that override them.
+
+Usage:
+  tpg.dv install      Set up and start the guard
+  tpg.dv uninstall    Stop and remove everything trackpad-guard owns
+  tpg.dv enable       Start the guard (after install)
+  tpg.dv disable      Stop the guard without uninstalling
+  tpg.dv toggle       Flip current state
+  tpg.dv status       Show install + run state and paths
+  tpg.dv help         Show this message
+
+Files written (per-user, no sudo required):
+  ~/Library/Scripts/restore-trackpad.sh
+  ~/Library/LaunchAgents/com.user.trackpad-restore.plist
+
+The LaunchAgent reasserts these preferences every 3 seconds and whenever the
+trackpad preference files change:
+  - TrackpadThreeFingerHorizSwipeGesture (app switching)
+  - TrackpadFourFingerVertSwipeGesture (Mission Control)
+  - showMissionControlGestureEnabled
+HELP
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+case "${1:-help}" in
+    install)        cmd_install ;;
+    uninstall)      cmd_uninstall ;;
+    enable)         cmd_enable ;;
+    disable)        cmd_disable ;;
+    toggle)         cmd_toggle ;;
+    status)         cmd_status ;;
+    help|-h|--help) cmd_help ;;
+    *)
+        echo "Usage: tpg.dv {install|uninstall|enable|disable|toggle|status|help}" >&2
+        exit 1
+        ;;
+esac
