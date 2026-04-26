@@ -17,6 +17,30 @@ The goal is not to disable the software or subvert its purpose. The goal is to p
 
 ---
 
+## Install
+
+Download, inspect, and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/franzliszt2/trackpadguard/main/tpg.dv -o ~/tpg.dv
+chmod +x ~/tpg.dv
+~/tpg.dv install
+```
+
+Optional alias:
+
+```bash
+echo 'alias tpg="$HOME/tpg.dv"' >> ~/.zshrc && source ~/.zshrc
+```
+
+Then `tpg status`, `tpg toggle`, `tpg uninstall`, etc.
+
+**Requirements:** macOS. No `sudo`, no Homebrew, no third-party packages. All files live under the invoking user's `~/Library`.
+
+To remove cleanly: `~/tpg.dv uninstall && rm ~/tpg.dv`.
+
+---
+
 ## Architecture
 
 Two independent layers were built:
@@ -33,23 +57,34 @@ A second macOS user account (`Franz`) provides a completely isolated desktop env
 
 ## Tooling
 
-### `trackpad-guard.sh`
+### `tpg.dv` — distributable
 
-**Location:** `~/trackpad-guard.sh`
-**Alias:** `tpg`
+**Repo path:** `tpg.dv`
+**Recommended install location:** `~/tpg.dv`
 
-The distributable. A self-contained bash script that manages the full lifecycle of the persistence layer. Dynamically resolves all paths via `$HOME` — no hard-coded usernames. Drop it on any Mac, `chmod +x`, and run.
+A self-contained Bash script that manages the full lifecycle of the persistence layer. Resolves all paths via `$HOME` — no hard-coded usernames or machine assumptions. Runs entirely in the user's domain (`~/Library/Scripts`, `~/Library/LaunchAgents`). No `sudo`, no third-party packages, no network calls.
 
-**Commands:**
+Uses modern `launchctl bootstrap`/`bootout` on the per-user GUI domain where available, with fallback to legacy `load`/`unload` for older macOS. Generated plist is validated with `plutil -lint` when present.
+
+**Commands** (substitute `tpg` for `~/tpg.dv` if you set the alias above):
 
 | Command | Effect |
 |---|---|
-| `tpg install` | Writes the restore script and LaunchAgent plist, loads the agent |
-| `tpg uninstall` | Unloads the agent, deletes all files — clean slate |
-| `tpg enable` | Loads the LaunchAgent (agent must be installed) |
-| `tpg disable` | Unloads the LaunchAgent without removing files |
-| `tpg toggle` | Flips current state |
-| `tpg status` | Reports RUNNING / INSTALLED+STOPPED / NOT INSTALLED |
+| `~/tpg.dv install` | Writes the restore script and LaunchAgent plist, runs the restore once, loads the agent |
+| `~/tpg.dv uninstall` | Unloads the agent, deletes only files trackpad-guard owns |
+| `~/tpg.dv enable` | Loads the LaunchAgent (requires prior install) |
+| `~/tpg.dv disable` | Unloads the LaunchAgent without removing files |
+| `~/tpg.dv toggle` | Flips current state |
+| `~/tpg.dv status` | Reports installed/running state and file paths |
+| `~/tpg.dv help` | Prints usage |
+
+---
+
+### `trackpad-guard.sh` — maintainer copy
+
+**Repo path:** `trackpad-guard.sh`
+
+Same trackpad guard surface as `tpg.dv`, plus a `monitor` subcommand that runs `lsof -i` periodically to a log file under `$HOME`. Used during the original investigation to identify what the productivity app talks to over the network. Not part of the distributable — kept in the repo for reference. **General users should install `tpg.dv` instead.**
 
 ---
 
